@@ -240,11 +240,20 @@ func authenticatedUser(ctx *Context) (_ *db.User, isBasicAuth, isTokenAuth bool)
 					user, err := db.Users.GetByEmail(ctx.Req.Context(), claim.Email)
 					if err == nil {
 						return user, false, false
-					} else {
+					} else if conf.Auth.EnableReverseProxyAutoRegistration {
+						sources, err := db.LoginSources.List(ctx.Req.Context(),
+							db.ListLoginSourceOptions{
+								AuthType:      auth.LDAP,
+								OnlyActivated: true,
+							})
+						if err != nil || len(sources) == 0 {
+							return nil, false, false
+						}
+
 						user, _ := db.Users.Create(ctx.Req.Context(), claim.PreferredUsername, claim.Email, db.CreateUserOptions{
 							FullName:    claim.User,
 							Password:    "",
-							LoginSource: int64(auth.OAuth2),
+							LoginSource: sources[0].ID,
 							LoginName:   claim.Email,
 							Location:    "",
 							Website:     "",

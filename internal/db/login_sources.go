@@ -275,6 +275,7 @@ func (db *loginSources) GetByID(ctx context.Context, id int64) (*LoginSource, er
 type ListLoginSourceOptions struct {
 	// Whether to only include activated login sources.
 	OnlyActivated bool
+	AuthType      auth.Type
 }
 
 func (db *loginSources) List(ctx context.Context, opts ListLoginSourceOptions) ([]*LoginSource, error) {
@@ -282,6 +283,9 @@ func (db *loginSources) List(ctx context.Context, opts ListLoginSourceOptions) (
 	query := db.WithContext(ctx).Order("id ASC")
 	if opts.OnlyActivated {
 		query = query.Where("is_actived = ?", true)
+	}
+	if opts.AuthType > 0 {
+		query.Where("type = ?", opts.AuthType)
 	}
 	err := query.Find(&sources).Error
 	if err != nil {

@@ -6,6 +6,7 @@ package context
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/url"
 	"strings"
@@ -165,12 +166,12 @@ func authenticatedUserID(c *macaron.Context, sess session.Store) (_ int64, isTok
 
 // authenticatedUser returns the user object of the authenticated user, along with two bool values
 // which indicate whether the user uses HTTP Basic Authentication or token authentication respectively.
-func authenticatedUser(ctx *macaron.Context, sess session.Store) (_ *db.User, isBasicAuth, isTokenAuth bool) {
+func authenticatedUser(ctx *Context) (_ *db.User, isBasicAuth, isTokenAuth bool) {
 	if !db.HasEngine {
 		return nil, false, false
 	}
 
-	uid, isTokenAuth := authenticatedUserID(ctx, sess)
+	uid, isTokenAuth := authenticatedUserID(ctx.Context, ctx.Session)
 
 	if uid <= 0 {
 		if conf.Auth.EnableReverseProxyAuthentication {
@@ -221,6 +222,40 @@ func authenticatedUser(ctx *macaron.Context, sess session.Store) (_ *db.User, is
 				return u, true, false
 			}
 		}
+		if cookie, err := ctx.Req.Cookie(conf.Auth.OAuth2ProxyCookieName); err == nil {
+			r, _ := http.NewRequest(http.MethodGet, conf.Auth.OAuth2ProxyEndpoint+"/oauth2/userinfo", nil)
+			r.AddCookie(cookie)
+			r.WithContext(ctx.Req.Context())
+			if r2, err := http.DefaultClient.Do(r); err == nil && r2.StatusCode == http.StatusOK {
+				var claim = &struct {
+					User              string   `json:"user"`
+					Email             string   `json:"email"`
+					Groups            []string `json:"groups"`
+					PreferredUsername string   `json:"preferredUsername"`
+				}{}
+				defer func() {
+					_ = r2.Body.Close()
+				}()
+				if err = json.NewDecoder(r2.Body).Decode(claim); err == nil {
+					user, err := db.Users.GetByEmail(ctx.Req.Context(), claim.Email)
+					if err == nil {
+						return user, false, false
+					} else {
+						user, _ := db.Users.Create(ctx.Req.Context(), claim.PreferredUsername, claim.Email, db.CreateUserOptions{
+							FullName:    claim.User,
+							Password:    "",
+							LoginSource: int64(auth.OAuth2),
+							LoginName:   claim.Email,
+							Location:    "",
+							Website:     "",
+							Activated:   true,
+							Admin:       checkIn(claim.Groups, "admin"),
+						})
+						return user, false, false
+					}
+				}
+			}
+		}
 		return nil, false, false
 	}
 
@@ -230,6 +265,15 @@ func authenticatedUser(ctx *macaron.Context, sess session.Store) (_ *db.User, is
 		return nil, false, false
 	}
 	return u, false, isTokenAuth
+}
+
+func checkIn[T comparable](array []T, obj T) bool {
+	for _, item := range array {
+		if item == obj {
+			return true
+		}
+	}
+	return false
 }
 
 // AuthenticateByToken attempts to authenticate a user by the given access

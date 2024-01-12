@@ -260,7 +260,7 @@ func Contexter() macaron.Handler {
 		}
 
 		// Get user from session or header when possible
-		c.User, c.IsBasicAuth, c.IsTokenAuth = authenticatedUser(c.Context, c.Session)
+		c.User, c.IsBasicAuth, c.IsTokenAuth = authenticatedUser(c)
 
 		if c.User != nil {
 			c.IsLogged = true

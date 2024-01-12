@@ -253,6 +253,9 @@ type AuthOpts struct {
 	EnableReverseProxyAuthentication   bool
 	EnableReverseProxyAutoRegistration bool
 	ReverseProxyAuthenticationHeader   string
+
+	OAuth2ProxyEndpoint   string
+	OAuth2ProxyCookieName string
 }
 
 // Authentication settings
